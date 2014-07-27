@@ -11,11 +11,14 @@
 # addExample() and classify() and anything you further invoke from there.
 #
 
-
+from __future__ import division
+from pprint import pprint
 import sys
 import getopt
 import os
 import math
+import collections
+from sets import Set
 
 class NaiveBayes:
   class TrainSplit:
@@ -24,6 +27,8 @@ class NaiveBayes:
     def __init__(self):
       self.train = []
       self.test = []
+      #added
+
 
   class Example:
     """Represents a document with a label. klass is 'pos' or 'neg' by convention.
@@ -37,8 +42,14 @@ class NaiveBayes:
   def __init__(self):
     """NaiveBayes initialization"""
     self.FILTER_STOP_WORDS = False
-    self.stopList = set(self.readFile('../data/english.stop'))
-    self.numFolds = 10
+    self.frecuencyWordMap = {'pos': collections.defaultdict(lambda: 0), 'neg': collections.defaultdict(lambda: 0)};
+    self.nDocs = 0    #contador de documentos
+    self.documentsInClass = {'pos' : 0, 'neg' : 0} #documentos en cada clase
+    self.wordsInClass = {'pos' : 0, 'neg' : 0} # palabras en cada clase
+    self.stopList = set(self.readFile('../data/english.stop')) # lista de palabras no utiles
+    #pprint (dir(self.stopList))
+    self.numFolds = 10  # 10 veces para la validacion cruzada de data de entrenamiento y de prueba
+    self.V = Set()
 
   #############################################################################
   # TODO TODO TODO TODO TODO 
@@ -47,7 +58,36 @@ class NaiveBayes:
     """ TODO
       'words' is a list of words to classify. Return 'pos' or 'neg' classification.
     """
-    return 'pos'
+
+    resultPos = 0.0 # resultados positivos
+    resultNeg = 0.0 # "" negativos
+
+    #probabilidades positivas y negativas
+    probabilityPos = 0.0
+    probabilityNeg = 0.0
+
+    # guardamos aprioris negativos y positivos aplicando logaritmo natural 
+    priorPos = math.log(self.documentsInClass['pos']/self.nDocs)
+    priorNeg = math.log(self.documentsInClass['neg']/self.nDocs)
+
+    
+    for word in words:
+      #si una palabra no esta en el vocabulario usamos la probabilidad por defecto 
+      if word not in self.V:
+        probabilityPos += math.log(1) - math.log(self.documentsInClass['pos'] + len(self.V) + 1)
+        probabilityNeg += math.log(1) - math.log(self.documentsInClass['neg'] + len(self.V) + 1)
+      else:
+        probabilityPos += math.log(self.frecuencyWordMap['pos'][word] + 1) - math.log(self.wordsInClass['pos'] + len(self.V))
+        probabilityNeg += math.log(self.frecuencyWordMap['neg'][word] + 1) - math.log(self.wordsInClass['neg'] + len(self.V))
+      
+    # sumamos la probabilidad con la apriori
+    resultPos += priorPos + probabilityPos
+    resultNeg += priorNeg + probabilityNeg
+
+    if(resultPos > resultNeg):
+      return 'pos'
+    else:
+      return 'neg'
   
 
   def addExample(self, klass, words):
@@ -59,7 +99,29 @@ class NaiveBayes:
      * in the NaiveBayes class.
      * Returns nothing
     """
-    pass
+    self.nDocs += 1
+    self.documentsInClass[klass] += 1
+
+    # Clip words to single frequency
+    s = Set()
+    for word in words:
+      s.add(word)
+
+    for word in s:
+      self.frecuencyWordMap[klass][word] += 1 #frecuencia de cada palabra
+      self.V.add(word)
+      self.wordsInClass[klass] += 1
+
+  def filterStopWords(self, words):
+    """
+    * TODO
+    * Filters stop words found in self.stopList.
+    """
+    filtered = []
+    for word in words:  #filtramos las stop words definidas en english.stop y las agregamos a filtered
+      if not word in self.stopList and word.strip() != '':
+        filtered.append(word);
+    return filtered
       
 
   # TODO TODO TODO TODO TODO 
@@ -161,14 +223,17 @@ class NaiveBayes:
 
       posTrainFileNames = os.listdir('%s/pos/' % trainDir)
       negTrainFileNames = os.listdir('%s/neg/' % trainDir)
+
       for fold in range(0, self.numFolds):
         split = self.TrainSplit()
         for fileName in posTrainFileNames:
           example = self.Example()
           example.words = self.readFile('%s/pos/%s' % (trainDir, fileName))
           example.klass = 'pos'
+
           if fileName[2] == str(fold):
             split.test.append(example)
+            #pprint(dir(fileName))
           else:
             split.train.append(example)
         for fileName in negTrainFileNames:
@@ -226,7 +291,7 @@ def main():
   nb = NaiveBayes()
   (options, args) = getopt.getopt(sys.argv[1:], 'f')
   if ('-f','') in options:
-    nb.FILTER_STOP_WORDS = True
+    nb.FILTER_STOP_WORDS = True  
   
   splits = nb.buildSplits(args)
   avgAccuracy = 0.0
@@ -245,7 +310,7 @@ def main():
       if nb.FILTER_STOP_WORDS:
         words =  classifier.filterStopWords(words)
       guess = classifier.classify(words)
-      if example.klass == guess:
+      if example.klass == guess: #acierta
         accuracy += 1.0
 
     accuracy = accuracy / len(split.test)
